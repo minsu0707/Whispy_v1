@@ -144,7 +144,6 @@ const bounceIn = keyframes`
   }
 `;
 
-// 스타일드 컴포넌트 정의
 const AppContainer = styled.div`
   width: 100%;
   min-height: 100vh;
