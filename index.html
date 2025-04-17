@@ -2,13 +2,41 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/moon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/public/whispy.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Whispy - 편안한 밤을 위한 수면 도우미</title>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    <link
+      rel="stylesheet"
+      as="style"
+      crossorigin
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css"
+    />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
+<script>
+  // 페이지 로드 시 통계 기록
+  fetch(
+    "https://web-statistics.ncloud.sbs/api/statistics/connect/7ed20cb3c19d11539a80e9a86a405f62?visitor=" +
+      (localStorage.getItem("visitorId") || "anonymous")
+  )
+    .then((response) => response.json())
+    .then((data) => {
+      // 방문자 ID 저장
+      if (!localStorage.getItem("visitorId")) {
+        localStorage.setItem(
+          "visitorId",
+          Math.random().toString(36).substring(2, 15)
+        );
+      }
+      // 응답 로깅 (디버깅 용도)
+      if (data.status === "OK") {
+        console.log("방문 통계가 성공적으로 기록되었습니다.");
+      }
+    })
+    .catch((error) => console.error("통계 기록 실패:", error));
+</script>

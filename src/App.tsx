@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import styled, { keyframes, ThemeProvider, css } from "styled-components";
 import {
   Moon,
@@ -11,12 +11,8 @@ import {
   Clock,
   AlignLeft,
   Sun,
+  CloudRain,
 } from "lucide-react";
-import {
-  trackVisitor,
-  generateVisitorId,
-  getVisitorStats,
-} from "./services/visitorService";
 
 // 테마 정의
 const theme = {
@@ -45,6 +41,20 @@ const fadeIn = keyframes`
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+`;
+
+const rainDrop = keyframes`
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(1000%);
   }
 `;
 
@@ -144,10 +154,14 @@ const bounceIn = keyframes`
   }
 `;
 
-const AppContainer = styled.div`
+const AppContainer = styled.div<{ $isRaining: boolean }>`
   width: 100%;
   min-height: 100vh;
-  background: linear-gradient(to bottom, #1a1a4f, #2a2a7f);
+  background: linear-gradient(
+    to bottom,
+    ${(props) => (props.$isRaining ? "#1a344f" : "#1a1a4f")},
+    ${(props) => (props.$isRaining ? "#2a547f" : "#2a2a7f")}
+  );
   color: white;
   display: flex;
   flex-direction: column;
@@ -155,6 +169,7 @@ const AppContainer = styled.div`
     Roboto, sans-serif;
   position: relative;
   overflow: hidden;
+  transition: background 1s ease-in-out;
 `;
 
 const StarBackground = styled.div`
@@ -173,6 +188,32 @@ const Star = styled.div`
   animation: ${css`
     ${twinkle} 3s infinite ease-in-out
   `};
+`;
+
+const RainBackground = styled.div<{ $isRaining: boolean }>`
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  display: ${(props) => (props.$isRaining ? "block" : "none")};
+`;
+
+const RainDrop = styled.div`
+  position: absolute;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.8)
+  );
+  width: 1px;
+  border-radius: 0;
+  opacity: 0;
+  animation-name: ${rainDrop};
+  animation-duration: 1s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
 `;
 
 const Header = styled.header<{ $isInitialLoad: boolean }>`
@@ -519,9 +560,17 @@ const FeatureGrid = styled.div<{ $isInitialLoad: boolean }>`
   animation-fill-mode: backwards;
 `;
 
-const FeatureButton = styled.button<{ $isActive?: boolean }>`
-  background-color: ${(props) =>
-    props.$isActive ? "rgba(78, 115, 223, 0.4)" : "rgba(78, 115, 223, 0.2)"};
+const FeatureButton = styled.button<{
+  $isActive?: boolean;
+  $isRaining?: boolean;
+}>`
+  background-color: ${(props) => {
+    if (props.$isRaining && props.$isActive) return "rgba(41, 128, 185, 0.6)";
+    if (props.$isRaining) return "rgba(41, 128, 185, 0.3)";
+    return props.$isActive
+      ? "rgba(78, 115, 223, 0.4)"
+      : "rgba(78, 115, 223, 0.2)";
+  }};
   border: none;
   border-radius: 10px;
   padding: 20px;
@@ -536,7 +585,8 @@ const FeatureButton = styled.button<{ $isActive?: boolean }>`
   overflow: hidden;
 
   &:hover {
-    background-color: rgba(78, 115, 223, 0.3);
+    background-color: ${(props) =>
+      props.$isRaining ? "rgba(41, 128, 185, 0.5)" : "rgba(78, 115, 223, 0.3)"};
     transform: translateY(-3px);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
   }
@@ -569,20 +619,28 @@ const FeatureButton = styled.button<{ $isActive?: boolean }>`
   }
 `;
 
-const FeatureIcon = styled.div<{ $isActive?: boolean }>`
+const FeatureIcon = styled.div<{ $isActive?: boolean; $isRaining?: boolean }>`
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  background-color: ${(props) =>
-    props.$isActive ? "rgba(78, 115, 223, 0.7)" : "rgba(78, 115, 223, 0.5)"};
+  background-color: ${(props) => {
+    if (props.$isRaining && props.$isActive) return "rgba(41, 128, 185, 0.8)";
+    if (props.$isRaining) return "rgba(41, 128, 185, 0.6)";
+    return props.$isActive
+      ? "rgba(78, 115, 223, 0.7)"
+      : "rgba(78, 115, 223, 0.5)";
+  }};
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 10px;
   transition: all 0.3s ease;
   transform: ${(props) => (props.$isActive ? "scale(1.1)" : "scale(1)")};
-  box-shadow: ${(props) =>
-    props.$isActive ? "0 0 20px rgba(78, 115, 223, 0.5)" : "none"};
+  box-shadow: ${(props) => {
+    if (props.$isRaining && props.$isActive)
+      return "0 0 20px rgba(41, 128, 185, 0.7)";
+    return props.$isActive ? "0 0 20px rgba(78, 115, 223, 0.5)" : "none";
+  }};
 `;
 
 const FeatureText = styled.span`
@@ -641,63 +699,31 @@ function App() {
   const [volume, setVolume] = useState(70);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [activeFeature, setActiveFeature] = useState<number | null>(null);
-  const [visitorCount, setVisitorCount] = useState<number | null>(null);
+  const [isRaining, setIsRaining] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const rainAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    // 프로덕션 환경에서만 방문자 추적
-    if (import.meta.env.PROD) {
-      const visitorId = generateVisitorId();
-      trackVisitor(visitorId);
+  // 빗방울 효과 생성
+  const generateRaindrops = useCallback(() => {
+    const drops = [];
+    const dropCount = 150;
+
+    for (let i = 0; i < dropCount; i++) {
+      drops.push({
+        id: i,
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 50}%`,
+        animationDelay: `${Math.random() * 2}s`,
+        height: `${Math.random() * 20 + 10}px`,
+        animationDuration: `${Math.random() * 1 + 0.5}s`,
+        opacity: Math.random() * 0.3 + 0.1,
+      });
     }
 
-    // 방문자 통계 가져오기
-    const fetchVisitorStats = async () => {
-      const stats = await getVisitorStats();
-      if (stats) {
-        setVisitorCount(stats.count as number);
-      }
-    };
-    fetchVisitorStats();
-
-    // 초기 로드 상태를 false로 설정
-    const timer = setTimeout(() => {
-      setIsInitialLoad(false);
-    }, 1500);
-
-    return () => clearTimeout(timer);
+    return drops;
   }, []);
 
-  const togglePlay = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
-    }
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = Number.parseInt(e.target.value);
-    setVolume(newVolume);
-    if (audioRef.current) {
-      audioRef.current.volume = newVolume / 100;
-    }
-  };
-
-  const handleVolumeSliderClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const slider = e.currentTarget;
-    const rect = slider.getBoundingClientRect();
-    const percentage = ((e.clientX - rect.left) / rect.width) * 100;
-    const newVolume = Math.min(100, Math.max(0, Math.round(percentage)));
-
-    setVolume(newVolume);
-    if (audioRef.current) {
-      audioRef.current.volume = newVolume / 100;
-    }
-  };
+  const [raindrops, setRaindrops] = useState(() => generateRaindrops());
 
   // 별을 표시하기 위한 랜덤 데이터 생성
   const stars = Array.from({ length: 50 }, (_, i) => ({
@@ -708,9 +734,140 @@ function App() {
     delay: Math.random() * 5,
   }));
 
+  useEffect(() => {
+    // 앱 초기화 시 볼륨 값 적용
+    const savedVolume = localStorage.getItem("whispy_volume");
+    if (savedVolume) {
+      setVolume(parseInt(savedVolume, 10));
+    }
+
+    // 초기 로드 상태를 false로 설정
+    const timer = setTimeout(() => {
+      setIsInitialLoad(false);
+    }, 1500);
+
+    // 오디오 요소 초기화
+    if (audioRef.current) {
+      audioRef.current.volume = volume / 100;
+    }
+
+    if (rainAudioRef.current) {
+      rainAudioRef.current.volume = volume / 100;
+    }
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 빗방울 애니메이션을 위한 useEffect
+  useEffect(() => {
+    if (isRaining) {
+      const interval = setInterval(() => {
+        setRaindrops(generateRaindrops());
+      }, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [isRaining, generateRaindrops]);
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+        if (isRaining && rainAudioRef.current) {
+          rainAudioRef.current.pause();
+        }
+      } else {
+        const playPromise = audioRef.current.play();
+
+        // play() 메서드가 Promise를 반환하므로 적절히 처리
+        if (playPromise !== undefined) {
+          playPromise.catch((error) => {
+            console.error("오디오 재생 오류:", error);
+          });
+        }
+
+        if (isRaining && rainAudioRef.current) {
+          const rainPlayPromise = rainAudioRef.current.play();
+          if (rainPlayPromise !== undefined) {
+            rainPlayPromise.catch((error) => {
+              console.error("빗소리 재생 오류:", error);
+            });
+          }
+        }
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const toggleRain = () => {
+    setIsRaining((prevState) => {
+      const newState = !prevState;
+
+      // 비 효과를 켤 때
+      if (newState) {
+        // 현재 재생 중이면 빗소리도 재생
+        if (isPlaying && rainAudioRef.current) {
+          rainAudioRef.current.volume = volume / 100;
+          const rainPlayPromise = rainAudioRef.current.play();
+          if (rainPlayPromise !== undefined) {
+            rainPlayPromise.catch((error) => {
+              console.error("빗소리 재생 오류:", error);
+            });
+          }
+        }
+      } else {
+        // 비 효과를 끌 때
+        if (rainAudioRef.current) {
+          rainAudioRef.current.pause();
+        }
+      }
+
+      return newState;
+    });
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = Number.parseInt(e.target.value);
+    setVolume(newVolume);
+
+    // 메인 오디오 볼륨 설정
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume / 100;
+    }
+
+    // 비 오디오 볼륨 설정
+    if (rainAudioRef.current) {
+      rainAudioRef.current.volume = newVolume / 100;
+    }
+
+    // 볼륨 값 저장
+    localStorage.setItem("whispy_volume", newVolume.toString());
+  };
+
+  const handleVolumeSliderClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const slider = e.currentTarget;
+    const rect = slider.getBoundingClientRect();
+    const percentage = ((e.clientX - rect.left) / rect.width) * 100;
+    const newVolume = Math.min(100, Math.max(0, Math.round(percentage)));
+
+    setVolume(newVolume);
+
+    // 메인 오디오 볼륨 설정
+    if (audioRef.current) {
+      audioRef.current.volume = newVolume / 100;
+    }
+
+    // 비 오디오 볼륨 설정
+    if (rainAudioRef.current) {
+      rainAudioRef.current.volume = newVolume / 100;
+    }
+
+    // 볼륨 값 저장
+    localStorage.setItem("whispy_volume", newVolume.toString());
+  };
+
   return (
     <ThemeProvider theme={theme}>
-      <AppContainer>
+      <AppContainer $isRaining={isRaining}>
         <StarBackground>
           {stars.map((star) => (
             <Star
@@ -721,10 +878,27 @@ function App() {
                 width: `${star.size}px`,
                 height: `${star.size}px`,
                 animationDelay: `${star.delay}s`,
+                opacity: isRaining ? "0.4" : "1",
               }}
             />
           ))}
         </StarBackground>
+
+        <RainBackground $isRaining={isRaining}>
+          {raindrops.map((drop) => (
+            <RainDrop
+              key={drop.id}
+              style={{
+                left: drop.left,
+                top: drop.top,
+                height: drop.height,
+                animationDelay: drop.animationDelay,
+                animationDuration: drop.animationDuration,
+                opacity: drop.opacity,
+              }}
+            />
+          ))}
+        </RainBackground>
 
         <Header $isInitialLoad={isInitialLoad}>
           <Title>Whispy</Title>
@@ -778,8 +952,12 @@ function App() {
               onMouseEnter={() => setActiveFeature(0)}
               onMouseLeave={() => setActiveFeature(null)}
               $isActive={activeFeature === 0}
+              $isRaining={isRaining}
             >
-              <FeatureIcon $isActive={activeFeature === 0}>
+              <FeatureIcon
+                $isActive={activeFeature === 0}
+                $isRaining={isRaining}
+              >
                 <User size={24} />
               </FeatureIcon>
               <FeatureText>명상</FeatureText>
@@ -788,28 +966,41 @@ function App() {
               onMouseEnter={() => setActiveFeature(1)}
               onMouseLeave={() => setActiveFeature(null)}
               $isActive={activeFeature === 1}
+              $isRaining={isRaining}
             >
-              <FeatureIcon $isActive={activeFeature === 1}>
+              <FeatureIcon
+                $isActive={activeFeature === 1}
+                $isRaining={isRaining}
+              >
                 <Clock size={24} />
               </FeatureIcon>
               <FeatureText>수면 분석</FeatureText>
             </FeatureButton>
             <FeatureButton
+              onClick={toggleRain}
               onMouseEnter={() => setActiveFeature(2)}
               onMouseLeave={() => setActiveFeature(null)}
-              $isActive={activeFeature === 2}
+              $isActive={isRaining || activeFeature === 2}
+              $isRaining={isRaining}
             >
-              <FeatureIcon $isActive={activeFeature === 2}>
-                <AlignLeft size={24} />
+              <FeatureIcon
+                $isActive={isRaining || activeFeature === 2}
+                $isRaining={isRaining}
+              >
+                <CloudRain size={24} />
               </FeatureIcon>
-              <FeatureText>자연 소리</FeatureText>
+              <FeatureText>{isRaining ? "비 효과 끄기" : "빗소리"}</FeatureText>
             </FeatureButton>
             <FeatureButton
               onMouseEnter={() => setActiveFeature(3)}
               onMouseLeave={() => setActiveFeature(null)}
               $isActive={activeFeature === 3}
+              $isRaining={isRaining}
             >
-              <FeatureIcon $isActive={activeFeature === 3}>
+              <FeatureIcon
+                $isActive={activeFeature === 3}
+                $isRaining={isRaining}
+              >
                 <Sun size={24} />
               </FeatureIcon>
               <FeatureText>백색 소음</FeatureText>
@@ -829,16 +1020,16 @@ function App() {
           </NavItem>
           <NavItem>
             <User size={20} />
-            <NavText>
-              {visitorCount !== null
-                ? `방문 ${visitorCount.toLocaleString()}회`
-                : "프로필"}
-            </NavText>
+            <NavText>프로필</NavText>
           </NavItem>
         </BottomNav>
 
         <audio ref={audioRef} loop>
-          <source src="/sounds/sleep.mp3" type="audio/mp3" />
+          <source src="./sounds/wave.mp3" type="audio/mp3" />
+        </audio>
+
+        <audio ref={rainAudioRef} loop>
+          <source src="./sounds/wave.mp3" type="audio/mp3" />
         </audio>
       </AppContainer>
     </ThemeProvider>
